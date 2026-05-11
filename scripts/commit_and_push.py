@@ -89,8 +89,22 @@ def main() -> int:
         )
         return 0
 
-    # commit mode: rebase on remote head, then push
-    run("git", "pull", "--rebase", "--autostash", "origin", "HEAD", check=False)
+    # commit mode: rebase on remote head, then push.
+    # If autostash hits conflicts (concurrent writer raced us), abort cleanly
+    # and exit non-zero — do NOT try to commit a half-merged tree.
+    pull = run("git", "pull", "--rebase", "--autostash", "origin", "HEAD", check=False)
+    if pull.returncode != 0:
+        # Abort any rebase in progress so the runner exits in a sane state
+        run("git", "rebase", "--abort", check=False)
+        print(
+            "\n[commit_and_push] git pull --rebase failed — most likely a concurrent\n"
+            "writer landed changes on main while this run was working. Concurrency\n"
+            "groups in the workflow should prevent this; if you see this regularly,\n"
+            "check that both daily-ingest.yml and weekly-lint.yml share the same\n"
+            "concurrency.group key.\n",
+            file=sys.stderr,
+        )
+        return 1
     run("git", "commit", "-m", commit_message(args.label))
     run("git", "push")
     return 0

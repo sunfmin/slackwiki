@@ -9,6 +9,13 @@ on:
 permissions:
   contents: write
 
+# Serialize all writes to this repo. If a lint is running, ingest queues; vice versa.
+# Without this, parallel runs hit merge conflicts when both touch index.md / log.md /
+# todos.md / people pages, and one run's work is lost on the autostash conflict.
+concurrency:
+  group: slackwiki-write
+  cancel-in-progress: false
+
 jobs:
   ingest:
     runs-on: ubuntu-latest

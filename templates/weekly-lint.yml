@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# Serialize all writes to this repo. See daily-ingest.yml for rationale.
+concurrency:
+  group: slackwiki-write
+  cancel-in-progress: false
+
 jobs:
   lint:
     runs-on: ubuntu-latest
