@@ -101,6 +101,7 @@ This section instantiates the LLM Wiki pattern for a specific domain: an interna
 | `wiki/decisions/YYYY-MM-DD-<slug>.md` | Decision made in Slack | `wiki/decisions/2026-05-11-drop-mongo.md` |
 | `wiki/sources/YYYY-MM-DD-slack.md` | Ingest batch digest | `wiki/sources/2026-05-11-slack.md` |
 | `wiki/lint/YYYY-MM-DD.md` | Weekly lint report | `wiki/lint/2026-05-11.md` |
+| `wiki/todos.md` | (single file) open items surfaced by lint that need follow-up | `wiki/todos.md` |
 
 ### Frontmatter
 
@@ -153,17 +154,31 @@ message_count: 0
 
 Trigger: the Action sets `state/new_files.txt` to the list of raw files written this run, then invokes you with the ingest prompt. Steps:
 
+0. **Pre-pass — resolve open items from prior lint passes.** Before processing new raw files, do two short scans against the existing wiki:
+
+   **(a) `⚠️ Unverified as of <date>` markers.** Search all wiki pages for these markers. For each one:
+   - Read the claim that immediately follows the marker.
+   - Check the new raw files (only those in `state/new_files.txt`) for any message that resolves the claim (confirms a deployment, closes a ticket, reverses a decision, etc.).
+   - If resolved: remove the `⚠️ Unverified` block and add a new `## YYYY-MM-DD` section under the same page confirming the resolution with a `[source](...)` citation.
+   - If not resolved: leave it.
+
+   **(b) `wiki/todos.md` open items.** For each `- [ ]` item under `## Open`:
+   - Check whether the new raw files close the item.
+   - If yes: change `- [ ]` to `- [x]`, strike the line through, append `(resolved YYYY-MM-DD in [[sources/YYYY-MM-DD-slack]])`, and move it under `## Resolved`.
+   - If no: leave it.
+
 1. **Read only the files listed in `state/new_files.txt`.** Do not scan the rest of the repo. This caps token cost.
 2. **Extract entities** from each file: people (authors and `@mentions`), projects / products / features by name, decisions (`"we decided"`, `"approved"`, `"let's go with X"`), open questions, links to other systems.
 3. **Update entity pages.** For each entity:
    - If `wiki/<type>/<slug>.md` does not exist, create it with proper frontmatter and a `## YYYY-MM-DD` section.
    - If it exists, **append, do not overwrite**: add a new `## YYYY-MM-DD` section with today's findings. Old content stays intact.
-4. **Write `wiki/sources/YYYY-MM-DD-slack.md`** — a digest page for this batch listing: channels touched, message counts, key events, new entities created, decisions recorded.
+4. **Write `wiki/sources/YYYY-MM-DD-slack.md`** — a digest page for this batch listing: channels touched, message counts, key events, new entities created, decisions recorded, and which `⚠️ Unverified` markers / todos got resolved in step 0.
 5. **Update `wiki/index.md`** — add links to any newly created pages, under the correct category.
 6. **Append one line to `wiki/log.md`** in this exact format:
    ```
-   ## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects, +Z decisions
+   ## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects, +Z decisions, -K resolved
    ```
+   where `-K resolved` counts items closed in the pre-pass.
 7. **Never touch `raw/`.** The `.claude/settings.json` denies it, but obey it explicitly.
 
 ### Writing style
@@ -181,17 +196,60 @@ Trigger: the Action sets `state/new_files.txt` to the list of raw files written 
 
 ### Lint workflow
 
-When invoked in lint mode (`mode: lint` in the Action), you write a single markdown report at `wiki/lint/YYYY-MM-DD.md` covering:
+When invoked in lint mode (`mode: lint` in the Action), do five things in one pass and produce ONE PR containing everything. Diagnose-only lint is useless: a list of "recommended actions" sitting in a markdown file gets read once and forgotten. Each lint pass must leave the wiki strictly more correct than it found it.
 
-- Stale claims newer sources have superseded
-- Contradictions between pages
-- Orphan pages with no inbound links
-- Concepts mentioned in pages but lacking their own page
-- Missing cross-references between related pages
-- Frontmatter that has drifted from this schema
-- Pages violating the English-only language policy
+1. **Apply mechanical fixes** to existing wiki pages — these are zero-judgment, low-risk edits:
+   - **Wikilink case**: `[[Kate]]` → `[[kate]]` whenever the target file is lowercase kebab-case.
+   - **Symmetric `related:` frontmatter**: if A.related lists B but B.related does not list A, add it.
+   - **Quote-block wrapping**: bare non-English inline terms get moved into a `> quote` block right after the English paraphrase, per the language policy.
+   - **Decision back-links**: every decision page gets a `See also:` line linking back to participant people pages and the related project page; sibling project pages get a "Key decisions" sub-section linking to relevant decisions.
 
-End with a `## Recommended actions` section listing concrete fixes. Do not modify any other wiki page during the lint run — only create the lint report.
+2. **Create stub pages** for missing-but-warranted entities. Thresholds:
+   - Topic pages for concepts referenced in ≥ 5 distinct wiki pages.
+   - People pages for `@handle`s referenced in ≥ 3 distinct wiki pages but lacking their own page.
+
+   Stub format (use existing wiki references to synthesize content — stubs are not empty):
+   ```
+   ---
+   type: <topic | person>
+   created_by: lint
+   first_seen: YYYY-MM-DD
+   ---
+
+   # <Title>
+
+   <One paragraph synthesizing what is known from existing wiki references.>
+
+   ## Mentions
+
+   - [[page1]] — what was said
+   - [[page2]] — what was said
+
+   _Stub created by lint based on existing wiki references. Future ingests will expand this page as new Slack messages provide more detail._
+   ```
+
+3. **Inject `⚠️ Unverified as of YYYY-MM-DD` markers** above each stale claim (claims dated more than 5 days ago whose follow-up state is not recorded). Format:
+   ```
+   > ⚠️ Unverified as of YYYY-MM-DD. <one-line description of what needs confirmation>.
+   ```
+   These get auto-resolved by the next ingest pass when new Slack messages confirm them (see Ingest workflow step 0).
+
+4. **Update `wiki/todos.md`** with anything that requires authorial judgment and isn't covered by 1–3 (e.g. scoping decisions, naming conventions, structural questions about the wiki itself). Append to `## Open` in the format:
+   ```
+   - [ ] YYYY-MM-DD — **<action>**. <context with [[wiki-links]]>
+   ```
+   Do not modify existing `## Resolved` items. Create `wiki/todos.md` if it doesn't exist (see seed format in `templates/wiki-seed/todos.md`).
+
+5. **Write the lint report** at `wiki/lint/YYYY-MM-DD.md` with one section per step above documenting exactly what was fixed / created / injected / queued. End with a "Residual items" section pointing readers to `wiki/todos.md` for tracked follow-ups.
+
+6. **Update `wiki/index.md`** for any new pages, and append one line to `wiki/log.md`:
+   ```
+   ## [YYYY-MM-DD] lint | N fixes, M stubs, P markers, Q new todos
+   ```
+
+The resulting PR contains: the report + all mechanical fixes + new stub pages + injected markers + updated `todos.md` — one reviewable changeset.
+
+Bounds: never touch `raw/`. Never delete content from existing pages; mark `status: superseded` instead. Never edit a `## Resolved` todo item.
 
 ### Bounds and safety
 

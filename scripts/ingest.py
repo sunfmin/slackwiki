@@ -19,15 +19,26 @@ NEW_FILES = REPO_ROOT / "state" / "new_files.txt"
 PROMPT = """Read every file listed in `state/new_files.txt` (only those — do not scan the rest of the repo).
 Then follow the "Ingest workflow" in CLAUDE.md exactly:
 
+0. **Pre-pass: resolve open items from prior lint passes.**
+   (a) Scan all wiki pages for `⚠️ Unverified as of <date>` markers. For each,
+       check the new raw files for a message that resolves the claim. If yes,
+       remove the marker and add a confirming `## YYYY-MM-DD` section with a
+       source citation. If no, leave it.
+   (b) For each `- [ ]` item under `## Open` in `wiki/todos.md`, check the new
+       raw files for a closing message. If yes, change to `- [x]`, strike it
+       through, append `(resolved YYYY-MM-DD in [[sources/YYYY-MM-DD-slack]])`,
+       and move it under `## Resolved`. If no, leave it.
+
 1. Extract people, projects, decisions, open questions, and links from each raw file.
 2. Create or append to pages under wiki/people, wiki/channels, wiki/projects,
    wiki/topics, wiki/decisions. Append-only: never overwrite existing sections;
    add a new `## YYYY-MM-DD` section with today's findings.
 3. Write `wiki/sources/YYYY-MM-DD-slack.md` digesting this ingest batch
-   (channels touched, message counts, key events, new entities created).
+   (channels touched, message counts, key events, new entities created,
+   plus what got resolved in step 0).
 4. Update `wiki/index.md` with links to any newly created pages.
 5. Append one line to `wiki/log.md`:
-   `## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects`
+   `## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects, -K resolved`
 6. Never modify anything under `raw/`.
 
 All wiki content must be in English (paraphrase non-English source messages
