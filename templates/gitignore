@@ -10,6 +10,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# Obsidian (per-vault editor state, mostly per-user window layout)
+.obsidian/
+
 # Local
 .env
 *.local
