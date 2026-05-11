@@ -11,6 +11,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import format_claude_stream  # noqa: E402
+
 
 REPO_ROOT = Path(os.environ.get("GITHUB_WORKSPACE") or ".").resolve()
 NEW_FILES = REPO_ROOT / "state" / "new_files.txt"
@@ -69,18 +72,27 @@ def main() -> int:
         print("no new files to ingest; skipping Claude run")
         return 0
 
-    print("running: claude --print --permission-mode acceptEdits …", flush=True)
-    result = subprocess.run(
+    print("running: claude --print --verbose --output-format stream-json …", flush=True)
+    proc = subprocess.Popen(
         [
             "claude",
             "--print",
+            "--verbose",
+            "--output-format", "stream-json",
             "--permission-mode", "acceptEdits",
             PROMPT,
         ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
         cwd=REPO_ROOT,
-        check=False,
     )
-    return result.returncode
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        format_claude_stream.format_line(line)
+    proc.wait()
+    return proc.returncode
 
 
 if __name__ == "__main__":

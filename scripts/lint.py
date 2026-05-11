@@ -19,6 +19,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import format_claude_stream  # noqa: E402
+
 
 REPO_ROOT = Path(os.environ.get("GITHUB_WORKSPACE") or ".").resolve()
 
@@ -92,18 +95,27 @@ def main() -> int:
     today = date.today().isoformat()
     prompt = PROMPT_TEMPLATE.format(today=today)
 
-    print("running: claude --print --permission-mode acceptEdits (lint+fix) …", flush=True)
-    result = subprocess.run(
+    print("running: claude --print --verbose --output-format stream-json (lint+fix) …", flush=True)
+    proc = subprocess.Popen(
         [
             "claude",
             "--print",
+            "--verbose",
+            "--output-format", "stream-json",
             "--permission-mode", "acceptEdits",
             prompt,
         ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
         cwd=REPO_ROOT,
-        check=False,
     )
-    return result.returncode
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        format_claude_stream.format_line(line)
+    proc.wait()
+    return proc.returncode
 
 
 if __name__ == "__main__":
