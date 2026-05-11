@@ -102,7 +102,7 @@ jobs:
 | `mode` | yes | — | `ingest` \| `lint` \| `fetch-only` \| `init` |
 | `config` | no | `slackwiki.config.yml` | Path to the per-workspace config (relative to caller repo root) |
 | `auto_commit` | no | `true` | Commit and push after running |
-| `output` | no | `commit` | For `mode: lint` only: `commit` or `pull-request` |
+| `output` | no | `commit` | For `mode: lint` only: `commit` pushes the lint diff straight to main; `pull-request` opens a PR (also requires `pull-requests: write` permission and the repo setting "Allow GitHub Actions to create and approve pull requests") |
 
 ## Environment variables consumed
 

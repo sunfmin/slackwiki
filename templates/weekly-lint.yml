@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   lint:
@@ -18,6 +17,9 @@ jobs:
         with:
           mode: lint
           config: slackwiki.config.yml
-          output: pull-request          # or "commit" to write directly to main
+          # output: pull-request        # uncomment to open a PR instead of pushing to main.
+                                        # Requires `pull-requests: write` in permissions and
+                                        # repo setting "Allow GitHub Actions to create and
+                                        # approve pull requests" enabled.
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
