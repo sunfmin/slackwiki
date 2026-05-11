@@ -29,17 +29,33 @@ Then follow the "Ingest workflow" in CLAUDE.md exactly:
        through, append `(resolved YYYY-MM-DD in [[sources/YYYY-MM-DD-slack]])`,
        and move it under `## Resolved`. If no, leave it.
 
-1. Extract people, projects, decisions, open questions, and links from each raw file.
+1. Extract entities from each raw file. The full list and detection rules are in
+   CLAUDE.md "Entity detection rules". Cover all of: people, projects, decisions,
+   **incidents** (impact language), **services / repos**, **vendors / external SaaS**,
+   **tickets** (ID patterns like KGM-123, MWMOP-456), **campaigns**, **release events**
+   (build / deploy), **acronyms** (track counts, do NOT add to glossary — lint does
+   that), **infrastructure changes**, **Q&A pairs from threads**, plus open questions
+   and external links.
 2. Create or append to pages under wiki/people, wiki/channels, wiki/projects,
-   wiki/topics, wiki/decisions. Append-only: never overwrite existing sections;
-   add a new `## YYYY-MM-DD` section with today's findings.
-3. Write `wiki/sources/YYYY-MM-DD-slack.md` digesting this ingest batch
-   (channels touched, message counts, key events, new entities created,
-   plus what got resolved in step 0).
-4. Update `wiki/index.md` with links to any newly created pages.
-5. Append one line to `wiki/log.md`:
-   `## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects, -K resolved`
-6. Never modify anything under `raw/`.
+   wiki/topics, wiki/decisions, **wiki/incidents, wiki/services, wiki/vendors,
+   wiki/tickets, wiki/campaigns**. Apply the thresholds from the page-types
+   table — below-threshold entities are not paged this run. Append-only: never
+   overwrite existing dated sections.
+   - Append a line to **wiki/releases/YYYY-MM.md** for every release event (build
+     #s, deploys). Create the month file if missing.
+   - Append to **wiki/infrastructure.md** for infra changes.
+   - Append to **wiki/faq.md** for clear Q&A pairs from threads.
+3. **Auto-link ticket IDs**: in every page you write or update, wrap bare
+   `[A-Z]{2,}-[0-9]+` matches as `[[tickets/<ID>]]`. Broken wiki-links are fine;
+   the next lint will stub tickets that pass the threshold.
+4. Write `wiki/sources/YYYY-MM-DD-slack.md` digesting this ingest batch
+   (channels touched, message counts, key events, new entities created across
+   all categories, plus what got resolved in step 0).
+5. Update `wiki/index.md` with links to any newly created pages, under the
+   correct category (add new sections for any category that didn't exist yet).
+6. Append one line to `wiki/log.md`:
+   `## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects, +Z decisions, +A incidents, +B services, +C vendors, +D tickets, -K resolved`
+7. Never modify anything under `raw/`.
 
 All wiki content must be in English (paraphrase non-English source messages
 into English and keep the original in a `> quote` block).

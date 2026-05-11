@@ -92,16 +92,26 @@ This section instantiates the LLM Wiki pattern for a specific domain: an interna
 
 ### Page types and naming
 
-| Path | One page per | Example |
-|------|-------------|---------|
-| `wiki/people/<slack-handle>.md` | Person seen in Slack | `wiki/people/example.md` |
-| `wiki/channels/<channel-name>.md` | Channel | `wiki/channels/general.md` |
-| `wiki/projects/<kebab-case>.md` | Project (≥ 3 distinct mentions before creating) | `wiki/projects/payments-v2.md` |
-| `wiki/topics/<kebab-case>.md` | Recurring concept / theme | `wiki/topics/incident-response.md` |
-| `wiki/decisions/YYYY-MM-DD-<slug>.md` | Decision made in Slack | `wiki/decisions/2026-05-11-drop-mongo.md` |
-| `wiki/sources/YYYY-MM-DD-slack.md` | Ingest batch digest | `wiki/sources/2026-05-11-slack.md` |
-| `wiki/lint/YYYY-MM-DD.md` | Weekly lint report | `wiki/lint/2026-05-11.md` |
-| `wiki/todos.md` | (single file) open items surfaced by lint that need follow-up | `wiki/todos.md` |
+| Path | One page per | Threshold | Example |
+|------|-------------|-----------|---------|
+| `wiki/people/<slack-handle>.md` | Person seen in Slack | 1 mention (any author or @mention) | `wiki/people/example.md` |
+| `wiki/channels/<channel-name>.md` | Channel | always (auto-discovered) | `wiki/channels/general.md` |
+| `wiki/projects/<kebab-case>.md` | Project | ≥ 3 distinct mentions | `wiki/projects/payments-v2.md` |
+| `wiki/topics/<kebab-case>.md` | Recurring concept / theme | ≥ 5 distinct mentions | `wiki/topics/incident-response.md` |
+| `wiki/decisions/YYYY-MM-DD-<slug>.md` | Decision made in Slack | 1 formal decision | `wiki/decisions/2026-05-11-drop-mongo.md` |
+| `wiki/incidents/YYYY-MM-DD-<slug>.md` | Operational incident with impact (outage, spike, failure, rollback, P0/P1) | impact language present | `wiki/incidents/2026-03-15-db-pressure-spike.md` |
+| `wiki/services/<name>.md` | Internal service or repo | ≥ 3 distinct mentions | `wiki/services/mcd-services.md` |
+| `wiki/vendors/<name>.md` | External vendor / SaaS dependency | ≥ 2 distinct mentions | `wiki/vendors/forter.md` |
+| `wiki/tickets/<TICKET-ID>.md` | Epic-level ticket (only for tickets that recur, not every ID) | ≥ 3 distinct dated mentions | `wiki/tickets/MWMOP-4749.md` |
+| `wiki/releases/YYYY-MM.md` | Calendar month of release / build activity | always when any build / deploy event exists | `wiki/releases/2026-05.md` |
+| `wiki/campaigns/<kebab-case>.md` | Marketing / product campaign with dates | ≥ 3 distinct mentions | `wiki/campaigns/chiikawa.md` |
+| `wiki/teams/<team>.md` | Sub-team derived from channel + project co-membership | ≥ 3 people in same channel + project | `wiki/teams/kakuyasu-cn.md` |
+| `wiki/sources/YYYY-MM-DD-slack.md` | Ingest batch digest | 1 per ingest | `wiki/sources/2026-05-11-slack.md` |
+| `wiki/lint/YYYY-MM-DD.md` | Lint report | 1 per lint | `wiki/lint/2026-05-11.md` |
+| `wiki/glossary.md` | (single) Acronym / term dictionary | always | `wiki/glossary.md` |
+| `wiki/infrastructure.md` | (single) Operational landscape snapshot | always | `wiki/infrastructure.md` |
+| `wiki/faq.md` | (single) Q&A pairs extracted from threads | always | `wiki/faq.md` |
+| `wiki/todos.md` | (single) Open items surfaced by lint | always | `wiki/todos.md` |
 
 ### Frontmatter
 
@@ -148,6 +158,83 @@ date: 2026-05-11
 channels_touched: []
 message_count: 0
 ---
+
+# incidents
+---
+type: incident
+date: 2026-05-11
+status: resolved            # ongoing | resolved | postmortem-pending
+severity: high              # low | medium | high | critical
+participants: []
+services_affected: []
+related_decisions: []
+---
+
+# services
+---
+type: service
+repo: ""                    # e.g. "theplant/mcd-services"
+language: ""                # e.g. "go", "kotlin", "swift", "typescript"
+status: active              # active | deprecated | archived
+primary_owners: []
+related_projects: []
+first_seen: 2026-05-11
+---
+
+# vendors
+---
+type: vendor
+category: ""                # payment | identity | fraud | analytics | cms | infra | ai | …
+integration_owner: ""
+status: active              # active | evaluating | deprecated
+related_decisions: []
+related_services: []
+first_seen: 2026-05-11
+---
+
+# tickets
+---
+type: ticket
+ticket_id: ""               # canonical ID, e.g. "MWMOP-4749"
+title: ""
+status: open                # open | in-progress | resolved | superseded
+owner: ""
+project: ""                 # related project slug
+related_decisions: []
+first_seen: 2026-05-11
+---
+
+# releases
+---
+type: release
+month: 2026-05
+projects_touched: []
+---
+
+# campaigns
+---
+type: campaign
+status: upcoming            # upcoming | active | completed
+key_dates: []               # ISO dates
+related_projects: []
+related_decisions: []
+first_seen: 2026-05-11
+---
+
+# teams
+---
+type: team
+focus: ""                   # one-line description of scope
+members: []                 # slack handles
+primary_channels: []
+primary_projects: []
+---
+
+# single-file pages
+---
+type: glossary              # or "infrastructure", "faq", "todos"
+updated: 2026-05-11
+---
 ```
 
 ### Ingest workflow
@@ -168,10 +255,11 @@ Trigger: the Action sets `state/new_files.txt` to the list of raw files written 
    - If no: leave it.
 
 1. **Read only the files listed in `state/new_files.txt`.** Do not scan the rest of the repo. This caps token cost.
-2. **Extract entities** from each file: people (authors and `@mentions`), projects / products / features by name, decisions (`"we decided"`, `"approved"`, `"let's go with X"`), open questions, links to other systems.
+2. **Extract entities** from each file. See "Entity detection rules" below for the full list and how to recognise each. In short: people, projects, decisions, **incidents** (impact language), **services** (repo names), **vendors** (external SaaS), **tickets** (ID patterns), **campaigns** (named time-bounded events), **release events** (build / deploy), **acronyms** (for glossary), **infrastructure changes** (RDS / K8s / cron), **Q&A pairs** (from threads), plus open questions and external links.
 3. **Update entity pages.** For each entity:
-   - If `wiki/<type>/<slug>.md` does not exist, create it with proper frontmatter and a `## YYYY-MM-DD` section.
+   - If `wiki/<type>/<slug>.md` does not exist and the threshold in the page-types table is met, create it with proper frontmatter and a `## YYYY-MM-DD` section. Below-threshold entities are remembered (counts roll forward in your synthesis) but no page is created yet — lint will back-fill once a threshold is crossed.
    - If it exists, **append, do not overwrite**: add a new `## YYYY-MM-DD` section with today's findings. Old content stays intact.
+   - Single-file pages (`glossary.md`, `infrastructure.md`, `faq.md`) get **appended to**, not section-replaced, when new entries arrive.
 4. **Write `wiki/sources/YYYY-MM-DD-slack.md`** — a digest page for this batch listing: channels touched, message counts, key events, new entities created, decisions recorded, and which `⚠️ Unverified` markers / todos got resolved in step 0.
 5. **Update `wiki/index.md`** — add links to any newly created pages, under the correct category.
 6. **Append one line to `wiki/log.md`** in this exact format:
@@ -180,6 +268,43 @@ Trigger: the Action sets `state/new_files.txt` to the list of raw files written 
    ```
    where `-K resolved` counts items closed in the pre-pass.
 7. **Never touch `raw/`.** The `.claude/settings.json` denies it, but obey it explicitly.
+
+### Entity detection rules
+
+These are the patterns that flip raw text into wiki entities. Apply them during step 2 of the ingest workflow. Thresholds for page creation are in the page-types table.
+
+- **Tickets** — regex `[A-Z]{2,}-[0-9]+`. Examples: `KGM-3120`, `MWMOP-4749`, `SRE-6021`, `MDX-12651`. After ingest, scan every wiki page you wrote or updated and auto-link bare occurrences as `[[tickets/<ID>]]` even if the page doesn't exist yet — Obsidian shows broken wiki-links as orphan signals that the next lint will pick up. Create the ticket page only after ≥ 3 distinct dated mentions across the wiki.
+
+- **Incidents** — impact language in messages: "outage", "incident", "P0/P1/P2/SEV", "broken", "down", "503", "504", "timeout", "spike", "rollback", "hotfix", "regression", "RCA", "postmortem", or specific numeric anomalies like "2400% spike". Create an incident page immediately (incidents are first-class events; no threshold). Page name: `YYYY-MM-DD-<short-slug>.md`. Frontmatter `severity` is your best estimate; mark `status: ongoing` if the new files don't show resolution.
+
+- **Services / repos** — repo names that look like internal services: `mcd-services`, `mcd-android`, `mcd-ios`, `qortexgo`, `qortexjs`, `ciam-next`, `kakuyasu-go`, `veritrans4g`, `foe`, etc. Detect from "PR #...", "github.com/...", file-path references, package import paths. Create page after ≥ 3 distinct mentions.
+
+- **Vendors** — external SaaS names in integration contexts: GMO, Forter, Veritrans, Plexure / PLX, Vertex AI / Gemini, Kratos, Japan Post Digital Address API, etc. Detect from phrasings like "GMO API", "Forter rejected", "Veritrans 4G integration", "PLX returned". Create page after ≥ 2 distinct mentions.
+
+- **Campaigns** — named, time-bounded marketing or product events. Pattern: "X Campaign" or specific named events with peak dates (Chiikawa, Pokemon). Create page after ≥ 3 distinct mentions; include `key_dates:` in frontmatter when known.
+
+- **Release events** — build numbers ("iOS build #1642", "Android #1318"), deploy events ("merged to prod", "deployed to stg-2", "release-canary tag", "release-stg2-abc1234"). Append a line to `wiki/releases/YYYY-MM.md` (create the file if it doesn't exist yet; one file per calendar month). Format:
+  ```
+  ## YYYY-MM-DD
+  - **iOS 5.5.30 #1642** (rebuild of #1641 due to STG failure) — see [[projects/jma]]
+  - **Android #1318** (JMA-3536, MDX-12541, 12661)
+  ```
+
+- **Acronyms** — uppercase tokens of length ≥ 3 like JMA, MMR, PLX, MOP, FOE, DIR, CIAM, ECI, RDS. Track per-page mention counts; entries are added to `wiki/glossary.md` by the lint pass once an acronym appears in ≥ 5 distinct wiki pages (do not add per-ingest; let lint debounce).
+
+- **Infrastructure changes** — RDS instance changes, K8s namespace / cluster work, ArgoCD config changes, cron additions / disablements / schedule changes, Nginx ingress tweaks. Append to `wiki/infrastructure.md` under the appropriate section (Databases / Clusters / Deployment systems / Scheduled jobs / Networking). Format: `- YYYY-MM-DD — <one-line change description> [source](...)`.
+
+- **Q&A pairs** — a thread parent that ends in a question mark with a reply containing an answer (look for confirmation patterns: "you can…", "the way to do this is…", "use X", code/command snippets). Append to `wiki/faq.md`:
+  ```
+  ### Q: <one-line paraphrased question>
+  A: <one-paragraph answer summary>
+  Asked by [[people/X]] in [[channels/Y]] on YYYY-MM-DD. [source](...)
+  ```
+  Be conservative — only extract Q&A pairs where the answer is clearly correct and reusable; skip discussion threads that don't converge.
+
+### Source-page anchor convention
+
+When citing a message, the digest page (`wiki/sources/YYYY-MM-DD-slack.md`) anchors each message with `<a id="msg-HHMM"></a>` derived from the rendered timestamp. Pages cite back as `[source](../sources/YYYY-MM-DD-slack.md#msg-HHMM)`. With multiple digests in a day (e.g. `-slack-b`, `-slack-c`), use the matching anchor target.
 
 ### Writing style
 
@@ -204,21 +329,27 @@ When invoked in lint mode (`mode: lint` in the Action), do five things in one pa
    - **Quote-block wrapping**: bare non-English inline terms get moved into a `> quote` block right after the English paraphrase, per the language policy.
    - **Decision back-links**: every decision page gets a `See also:` line linking back to participant people pages and the related project page; sibling project pages get a "Key decisions" sub-section linking to relevant decisions.
 
-2. **Create stub pages** for missing-but-warranted entities. Thresholds:
-   - Topic pages for concepts referenced in ≥ 5 distinct wiki pages.
-   - People pages for `@handle`s referenced in ≥ 3 distinct wiki pages but lacking their own page.
+2. **Create stub pages** for missing-but-warranted entities. Apply each threshold from the page-types table:
+   - **Topics**: ≥ 5 distinct wiki page mentions
+   - **People**: ≥ 3 distinct wiki page mentions of an `@handle` with no people page yet
+   - **Services**: ≥ 3 distinct mentions of an internal repo / service
+   - **Vendors**: ≥ 2 distinct mentions of an external SaaS
+   - **Tickets**: ≥ 3 distinct dated mentions of a ticket ID (the auto-link in step 1 below feeds this)
+   - **Incidents**: when impact language references a past event but no incident page exists for it
+   - **Campaigns**: ≥ 3 distinct mentions of a named campaign
+   - **Teams**: when ≥ 3 people consistently co-appear in the same channel + project (derive team membership)
 
-   Stub format (use existing wiki references to synthesize content — stubs are not empty):
+   Stub format (synthesize content from existing wiki references — never leave a stub empty):
    ```
    ---
-   type: <topic | person>
+   type: <topic | person | service | vendor | ticket | incident | campaign | team>
    created_by: lint
    first_seen: YYYY-MM-DD
    ---
 
    # <Title>
 
-   <One paragraph synthesizing what is known from existing wiki references.>
+   <One paragraph synthesising what is known from existing wiki references.>
 
    ## Mentions
 
@@ -240,14 +371,20 @@ When invoked in lint mode (`mode: lint` in the Action), do five things in one pa
    ```
    Do not modify existing `## Resolved` items. Create `wiki/todos.md` if it doesn't exist (see seed format in `templates/wiki-seed/todos.md`).
 
-5. **Write the lint report** at `wiki/lint/YYYY-MM-DD.md` with one section per step above documenting exactly what was fixed / created / injected / queued. End with a "Residual items" section pointing readers to `wiki/todos.md` for tracked follow-ups.
+5. **Update the glossary.** Scan all wiki pages for uppercase tokens `[A-Z]{3,}`. For each token appearing in ≥ 5 distinct pages and not yet in `wiki/glossary.md`, add an alphabetical entry with a one-line synthesised definition + `[[wiki-link]]` to the canonical page (if one exists). Don't add tokens that are file extensions, common English words in caps, or noise (e.g. URL, API, HTTP unless they're project-specific).
 
-6. **Update `wiki/index.md`** for any new pages, and append one line to `wiki/log.md`:
+6. **Roll up open action items into people pages.** For each `## Open` item in `wiki/todos.md` that contains `[[people/X]]`, mirror that line into `wiki/people/X.md` under a section named `## Open action items (from [[todos]])`. Replace the entire section on every lint run — do not append. If a person has no open items, remove the section entirely. This makes "what is X currently on the hook for?" a one-page answer.
+
+7. **Cross-link decisions ↔ incidents.** For each decision page that references an incident page in its body or sees-also, add `triggered_by: <incident-slug>` to the decision's frontmatter (only if not already present). Do not invert the relationship; the incident page links to decisions through its `related_decisions:` list, populated by the ingest.
+
+8. **Write the lint report** at `wiki/lint/YYYY-MM-DD.md` with one section per step above documenting exactly what was fixed / created / injected / queued / glossed / rolled-up / cross-linked. End with a "Residual items" section pointing readers to `wiki/todos.md` for tracked follow-ups.
+
+9. **Update `wiki/index.md`** for any new pages, and append one line to `wiki/log.md`:
    ```
-   ## [YYYY-MM-DD] lint | N fixes, M stubs, P markers, Q new todos
+   ## [YYYY-MM-DD] lint | N fixes, M stubs, P markers, Q new todos, R gloss, S rollups
    ```
 
-The resulting PR contains: the report + all mechanical fixes + new stub pages + injected markers + updated `todos.md` — one reviewable changeset.
+The resulting commit contains: the report + all mechanical fixes + new stub pages + injected markers + updated `todos.md` + glossary updates + per-person rollups + decision back-links — one reviewable changeset.
 
 Bounds: never touch `raw/`. Never delete content from existing pages; mark `status: superseded` instead. Never edit a `## Resolved` todo item.
 
