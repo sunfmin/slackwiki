@@ -1,0 +1,24 @@
+# slackwiki.config.yml — per-workspace settings for theplant/slackwiki Action.
+# This file is committed (not a secret). Tokens live in GitHub Secrets.
+
+workspace_name: example-corp           # used for display and commit-message prefix
+timezone: Asia/Tokyo                   # cron runs in UTC; raw files are bucketed by this TZ
+
+backfill_days: 7                       # how far back to pull on the very first run
+include_threads: true                  # also fetch replies under each thread parent
+include_private_channels: false        # if true, bot must be a member of those channels
+
+# Public channels to skip even if the bot is a member.
+# Channel auto-discovery pulls every public channel the bot has been invited to.
+channel_excludes:
+  - random
+  - off-topic
+
+wiki:
+  language: en                         # locked to English (see CLAUDE.md)
+  focus: |
+    # Optional domain hint for Claude. Leave empty if not needed.
+    # Example:
+    #   Internal product engineering team. Emphasize decisions about the
+    #   payments and onboarding products. Treat customer names as PII —
+    #   summarize impact, do not store full names.

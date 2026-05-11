@@ -1,0 +1,64 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Compile Python scripts
+        run: python -m compileall -q scripts/
+
+      - name: Validate YAML and JSON templates
+        run: |
+          python - <<'PY'
+          import json, sys, yaml, pathlib
+          root = pathlib.Path('.')
+          for p in [
+              'action.yml',
+              'templates/slackwiki.config.yml',
+              'templates/daily-ingest.yml',
+              'templates/weekly-lint.yml',
+          ]:
+              with open(root / p) as f:
+                  yaml.safe_load(f)
+              print(f"ok yaml: {p}")
+          for p in ['templates/claude-settings.json']:
+              with open(root / p) as f:
+                  json.load(f)
+              print(f"ok json: {p}")
+          for p in [
+              'templates/CLAUDE.md',
+              'templates/gitignore',
+              'templates/wiki-seed/index.md',
+              'templates/wiki-seed/log.md',
+              'templates/wiki-seed/overview.md',
+              'LICENSE',
+              'README.md',
+          ]:
+              assert (root / p).exists(), p
+              print(f"ok exists: {p}")
+          PY
+
+      - name: Dry-run init.py against a scratch workspace
+        run: |
+          mkdir -p /tmp/scratch
+          GITHUB_WORKSPACE=/tmp/scratch python scripts/init.py --full
+          test -f /tmp/scratch/CLAUDE.md
+          test -f /tmp/scratch/.claude/settings.json
+          test -f /tmp/scratch/slackwiki.config.yml
+          test -f /tmp/scratch/.github/workflows/daily-ingest.yml
+          test -f /tmp/scratch/wiki/index.md
+          echo "init.py --full ok"

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Write(./raw/**)",
+      "Edit(./raw/**)",
+      "Bash(rm -rf raw*)"
+    ]
+  }
+}

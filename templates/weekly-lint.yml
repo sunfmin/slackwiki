@@ -1,0 +1,23 @@
+name: weekly-lint
+
+on:
+  schedule:
+    - cron: '0 1 * * 1'   # Mondays 01:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: theplant/slackwiki@v1
+        with:
+          mode: lint
+          config: slackwiki.config.yml
+          output: pull-request          # or "commit" to write directly to main
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

@@ -1,0 +1,88 @@
+name: 'SlackWiki'
+description: 'Daily Slack ingest into a Claude Code-maintained markdown wiki (karpathy LLM-wiki pattern).'
+author: 'theplant'
+
+branding:
+  icon: 'book-open'
+  color: 'purple'
+
+inputs:
+  mode:
+    description: 'Run mode: ingest | lint | fetch-only | init'
+    required: true
+  config:
+    description: 'Path to slackwiki.config.yml, relative to the caller repo root.'
+    required: false
+    default: 'slackwiki.config.yml'
+  auto_commit:
+    description: 'Commit and push changes after running. Set "false" to inspect locally first.'
+    required: false
+    default: 'true'
+  output:
+    description: 'For mode=lint only: "commit" writes the report straight to main; "pull-request" opens a PR.'
+    required: false
+    default: 'commit'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Python dependencies
+      shell: bash
+      run: pip install -r "${{ github.action_path }}/scripts/requirements.txt"
+
+    - name: Set up Node
+      if: inputs.mode != 'fetch-only' && inputs.mode != 'init'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Install Claude Code CLI
+      if: inputs.mode != 'fetch-only' && inputs.mode != 'init'
+      shell: bash
+      run: npm install -g @anthropic-ai/claude-code
+
+    - name: Refresh schema (CLAUDE.md, .claude/settings.json)
+      if: inputs.mode != 'init'
+      shell: bash
+      env:
+        SLACKWIKI_CONFIG: ${{ inputs.config }}
+      run: python "${{ github.action_path }}/scripts/init.py"
+
+    - name: Bootstrap downstream repo (init mode)
+      if: inputs.mode == 'init'
+      shell: bash
+      run: python "${{ github.action_path }}/scripts/init.py" --full
+
+    - name: Fetch new Slack messages
+      if: inputs.mode == 'ingest' || inputs.mode == 'fetch-only'
+      shell: bash
+      env:
+        SLACKWIKI_CONFIG: ${{ inputs.config }}
+      run: python "${{ github.action_path }}/scripts/fetch_slack.py"
+
+    - name: Run Claude Code (ingest)
+      if: inputs.mode == 'ingest'
+      shell: bash
+      run: python "${{ github.action_path }}/scripts/ingest.py"
+
+    - name: Run Claude Code (lint)
+      if: inputs.mode == 'lint'
+      shell: bash
+      run: python "${{ github.action_path }}/scripts/lint.py"
+
+    - name: Commit and push
+      if: inputs.auto_commit == 'true' && inputs.mode != 'init'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        COMMIT_MODE: ${{ (inputs.mode == 'lint' && inputs.output == 'pull-request') && 'pull-request' || 'commit' }}
+        LABEL: ${{ inputs.mode }}
+      run: |
+        python "${{ github.action_path }}/scripts/commit_and_push.py" \
+          --mode "$COMMIT_MODE" \
+          --label "$LABEL"
