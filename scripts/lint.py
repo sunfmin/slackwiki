@@ -24,6 +24,7 @@ import format_claude_stream  # noqa: E402
 
 
 REPO_ROOT = Path(os.environ.get("GITHUB_WORKSPACE") or ".").resolve()
+MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-7")
 
 
 PROMPT_TEMPLATE = """Run the Lint workflow defined in CLAUDE.md. This is a
@@ -95,10 +96,11 @@ def main() -> int:
     today = date.today().isoformat()
     prompt = PROMPT_TEMPLATE.format(today=today)
 
-    print("running: claude --print --verbose --output-format stream-json (lint+fix) …", flush=True)
+    print(f"running: claude --model {MODEL} --print --verbose --output-format stream-json (lint+fix) …", flush=True)
     proc = subprocess.Popen(
         [
             "claude",
+            "--model", MODEL,
             "--print",
             "--verbose",
             "--output-format", "stream-json",

@@ -17,6 +17,7 @@ import format_claude_stream  # noqa: E402
 
 REPO_ROOT = Path(os.environ.get("GITHUB_WORKSPACE") or ".").resolve()
 NEW_FILES = REPO_ROOT / "state" / "new_files.txt"
+MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-7")
 
 
 PROMPT = """Read every file listed in `state/new_files.txt` (only those — do not scan the rest of the repo).
@@ -72,10 +73,11 @@ def main() -> int:
         print("no new files to ingest; skipping Claude run")
         return 0
 
-    print("running: claude --print --verbose --output-format stream-json …", flush=True)
+    print(f"running: claude --model {MODEL} --print --verbose --output-format stream-json …", flush=True)
     proc = subprocess.Popen(
         [
             "claude",
+            "--model", MODEL,
             "--print",
             "--verbose",
             "--output-format", "stream-json",
