@@ -58,7 +58,7 @@ Do all of the following in one run, in this order:
    Create the file if missing. Never modify existing `## Resolved` items.
 
 5. **Update `wiki/glossary.md`.** Scan every wiki page for uppercase tokens
-   `[A-Z]{3,}`. For each token in ≥ 5 distinct pages and not yet in the
+   `[A-Z]{{3,}}`. For each token in ≥ 5 distinct pages and not yet in the
    glossary, add an alphabetical entry: a one-line synthesized definition plus
    a `[[wiki-link]]` to the canonical page if one exists. Skip generic English
    in caps (API, URL, HTTP, etc.) unless they're project-specific.
