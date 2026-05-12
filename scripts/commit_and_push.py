@@ -173,6 +173,128 @@ def resolve_conflicts_with_claude() -> bool:
     return True
 
 
+def _git_head() -> str:
+    r = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+    )
+    return r.stdout.strip()
+
+
+def _git_upstream() -> str:
+    r = subprocess.run(
+        ["git", "rev-parse", "@{u}"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+    )
+    return r.stdout.strip()
+
+
+def _strip_code_fences(msg: str) -> str:
+    """Remove a wrapping ``` … ``` block from Claude output. Idempotent."""
+    lines = msg.splitlines()
+    while lines and lines[0].strip().startswith("```"):
+        lines.pop(0)
+    while lines and lines[-1].strip().startswith("```"):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def commit_and_push_via_claude(label: str) -> int:
+    """Hand the commit + push to Claude.
+
+    Claude can use Bash (only) — it inspects the staged diff with `git diff
+    --cached`, writes the commit message string itself, then runs
+    `git commit -m … -m …` and `git push`. Python verifies before/after by
+    comparing HEAD and origin/HEAD. If Claude didn't commit or didn't push,
+    Python falls back to a plain commit with a `<label>: <date>` message.
+    """
+    head_before = _git_head()
+    today = date.today().isoformat()
+
+    prompt = (
+        f"You're finalising a slackwiki `{label}` run on {today}. The repo has "
+        f"staged changes ready to commit. Your job: write a good commit message "
+        f"for them, then commit and push.\n\n"
+        f"Do these steps in order, using Bash:\n"
+        f"1. Run `git diff --cached --stat` to see what changed.\n"
+        f"2. Run `git diff --cached | head -400` to skim representative content.\n"
+        f"3. Compose a commit message:\n"
+        f"   - Title: `{label}: {today} — <specific imperative summary>`, "
+        f"no more than 72 chars total. Mention concrete counts or notable named "
+        f"entities (e.g. `+4 channels, +22 people, +2 incidents`, `resolve 3 "
+        f"todos, add Forter vendor page`).\n"
+        f"   - Body: 1-3 short paragraphs covering: counts of entities of each "
+        f"kind created or updated; specific named entities; which todos got "
+        f"resolved; which `⚠️ Unverified` markers were added or cleared; "
+        f"anything unusual.\n"
+        f"4. Commit with `git commit -m \"<title>\" -m \"<body>\"`. Use double-"
+        f"quoted arguments with proper shell escaping (or a HEREDOC if the body "
+        f"is long). DO NOT wrap the body in markdown ``` code fences — the "
+        f"message goes straight into git history, not into a markdown doc.\n"
+        f"5. Run `git push`.\n"
+        f"6. Print one final line: `DONE: <one-line summary>`.\n\n"
+        f"Forbidden:\n"
+        f"- `git reset` (any form), `git push --force` (any form), `git rebase`, "
+        f"`git commit --amend`, `git filter-branch`, `git reflog expire`.\n"
+        f"- Modifying any tracked file. The staged diff is already correct; "
+        f"do not touch it.\n"
+        f"- Including meta-commentary, `INGEST OK` / `LINT OK`, or self-"
+        f"references in the commit body.\n"
+    )
+
+    print("[commit_and_push] invoking claude to commit + push")
+    proc = subprocess.Popen(
+        [
+            "claude",
+            "--model", MODEL,
+            "--print",
+            "--verbose",
+            "--output-format", "stream-json",
+            "--permission-mode", "acceptEdits",
+            "--allowedTools", "Bash Read",
+            prompt,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        cwd=REPO_ROOT,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        format_claude_stream.format_line(line)
+    proc.wait()
+
+    # Python verifies the outcome — did HEAD move, is upstream in sync?
+    head_after = _git_head()
+    upstream = _git_upstream()
+
+    if head_after == head_before:
+        print(
+            "[commit_and_push] claude did not create a new commit; "
+            "falling back to a plain commit",
+            file=sys.stderr,
+        )
+        # Staged changes are still there. Commit + push from Python with a
+        # generic message so the run's work isn't lost.
+        run("git", "commit", "-m", _fallback_commit_message(label))
+        run("git", "push")
+        return 0
+
+    if head_after != upstream:
+        print(
+            f"[commit_and_push] claude committed {head_after[:8]} but did not "
+            f"push (upstream={upstream[:8]}); pushing from python",
+            file=sys.stderr,
+        )
+        push = run("git", "push", check=False)
+        if push.returncode != 0:
+            return push.returncode
+
+    print(f"[commit_and_push] ok: {head_before[:8]} -> {head_after[:8]}")
+    return 0
+
+
 def _fallback_commit_message(label: str) -> str:
     return f"{label}: {date.today().isoformat()}"
 
@@ -282,7 +404,8 @@ def main() -> int:
         run("git", "checkout", "-b", branch)
         # Generate the message ONCE (the Claude call is non-deterministic + costs tokens);
         # use the first line as the PR title and the rest as the PR body.
-        msg = commit_message(args.label)
+        # Strip any wrapping markdown ``` fences Claude might have added.
+        msg = _strip_code_fences(commit_message(args.label))
         lines = msg.splitlines()
         pr_title = lines[0]
         pr_body = "\n".join(lines[2:]).strip() if len(lines) > 2 else (
@@ -324,9 +447,9 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-    run("git", "commit", "-m", commit_message(args.label))
-    run("git", "push")
-    return 0
+    # Hand the commit + push to Claude (writes message, runs git commit, runs
+    # git push). Python verifies HEAD moved and upstream is in sync afterwards.
+    return commit_and_push_via_claude(args.label)
 
 
 if __name__ == "__main__":
