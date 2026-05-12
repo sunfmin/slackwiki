@@ -127,7 +127,9 @@ def resolve_conflicts_with_claude() -> bool:
             "--verbose",
             "--output-format", "stream-json",
             "--permission-mode", "acceptEdits",
-            "--allowedTools", "Read Edit Write",
+            # Same reasoning as in commit_and_push_via_claude: --allowedTools
+            # breaks arg parsing. Prompt-level guardrail is "Do NOT run any
+            # bash commands. Do NOT run git commands. Do NOT commit."
             prompt,
         ],
         stdout=subprocess.PIPE,
@@ -251,7 +253,10 @@ def commit_and_push_via_claude(label: str) -> int:
             "--verbose",
             "--output-format", "stream-json",
             "--permission-mode", "acceptEdits",
-            "--allowedTools", "Bash Read",
+            # Tool restriction is enforced via the prompt's "Forbidden" list,
+            # not a CLI flag. --allowedTools confuses arg parsing — when
+            # passed, claude reports "Input must be provided either through
+            # stdin or as a prompt argument" and the prompt is dropped.
             prompt,
         ],
         stdout=subprocess.PIPE,
