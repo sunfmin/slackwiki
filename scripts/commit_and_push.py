@@ -201,14 +201,10 @@ def _strip_code_fences(msg: str) -> str:
     return "\n".join(lines).strip()
 
 
-def commit_and_push_via_claude(label: str) -> int:
-    """Hand the commit + push to Claude.
-
-    Claude can use Bash (only) — it inspects the staged diff with `git diff
-    --cached`, writes the commit message string itself, then runs
-    `git commit -m … -m …` and `git push`. Python verifies before/after by
-    comparing HEAD and origin/HEAD. If Claude didn't commit or didn't push,
-    Python falls back to a plain commit with a `<label>: <date>` message.
+def commit_via_claude(label: str) -> bool:
+    """Have Claude write the commit message and run `git commit`. Returns True
+    on success (HEAD moved), False if Claude didn't commit. Push is handled
+    by Python afterwards — claude-settings.json does NOT allow git push.
     """
     head_before = _git_head()
     today = date.today().isoformat()
@@ -216,35 +212,34 @@ def commit_and_push_via_claude(label: str) -> int:
     prompt = (
         f"You're finalising a slackwiki `{label}` run on {today}. The repo has "
         f"staged changes ready to commit. Your job: write a good commit message "
-        f"for them, then commit and push.\n\n"
-        f"Do these steps in order, using Bash:\n"
+        f"for them, then run `git commit`. Python will run `git push` after you "
+        f"return; you must NOT push.\n\n"
+        f"Steps:\n"
         f"1. Run `git diff --cached --stat` to see what changed.\n"
         f"2. Run `git diff --cached | head -400` to skim representative content.\n"
-        f"3. Compose a commit message:\n"
+        f"3. Compose the commit message:\n"
         f"   - Title: `{label}: {today} — <specific imperative summary>`, "
-        f"no more than 72 chars total. Mention concrete counts or notable named "
-        f"entities (e.g. `+4 channels, +22 people, +2 incidents`, `resolve 3 "
-        f"todos, add Forter vendor page`).\n"
+        f"no more than 72 chars. Mention concrete counts or notable named "
+        f"entities (e.g. `+4 channels, +22 people, +2 incidents`, "
+        f"`resolve 3 todos, add Forter vendor page`).\n"
         f"   - Body: 1-3 short paragraphs covering: counts of entities of each "
         f"kind created or updated; specific named entities; which todos got "
         f"resolved; which `⚠️ Unverified` markers were added or cleared; "
         f"anything unusual.\n"
-        f"4. Commit with `git commit -m \"<title>\" -m \"<body>\"`. Use double-"
-        f"quoted arguments with proper shell escaping (or a HEREDOC if the body "
-        f"is long). DO NOT wrap the body in markdown ``` code fences — the "
-        f"message goes straight into git history, not into a markdown doc.\n"
-        f"5. Run `git push`.\n"
-        f"6. Print one final line: `DONE: <one-line summary>`.\n\n"
+        f"4. Commit with `git commit -m \"<title>\" -m \"<body>\"` (or repeated "
+        f"`-m` for multiple body paragraphs, or `-F -` with a HEREDOC). "
+        f"DO NOT wrap the body in markdown ``` code fences — the message goes "
+        f"straight into git history, not into a markdown doc.\n"
+        f"5. Print one final line: `DONE: <one-line summary>`.\n\n"
         f"Forbidden:\n"
-        f"- `git reset` (any form), `git push --force` (any form), `git rebase`, "
-        f"`git commit --amend`, `git filter-branch`, `git reflog expire`.\n"
-        f"- Modifying any tracked file. The staged diff is already correct; "
-        f"do not touch it.\n"
-        f"- Including meta-commentary, `INGEST OK` / `LINT OK`, or self-"
-        f"references in the commit body.\n"
+        f"- `git push` (any form) — Python will push.\n"
+        f"- `git reset`, `git rebase`, `git commit --amend`, `git filter-branch`, "
+        f"`git reflog expire`.\n"
+        f"- Modifying tracked files (the staged diff is already correct).\n"
+        f"- `INGEST OK` / `LINT OK` / self-references in the commit body.\n"
     )
 
-    print("[commit_and_push] invoking claude to commit + push")
+    print("[commit_and_push] invoking claude to write message + run git commit")
     proc = subprocess.Popen(
         [
             "claude",
@@ -253,10 +248,6 @@ def commit_and_push_via_claude(label: str) -> int:
             "--verbose",
             "--output-format", "stream-json",
             "--permission-mode", "acceptEdits",
-            # Tool restriction is enforced via the prompt's "Forbidden" list,
-            # not a CLI flag. --allowedTools confuses arg parsing — when
-            # passed, claude reports "Input must be provided either through
-            # stdin or as a prompt argument" and the prompt is dropped.
             prompt,
         ],
         stdout=subprocess.PIPE,
@@ -270,119 +261,51 @@ def commit_and_push_via_claude(label: str) -> int:
         format_claude_stream.format_line(line)
     proc.wait()
 
-    # Python verifies the outcome — did HEAD move, is upstream in sync?
     head_after = _git_head()
-    upstream = _git_upstream()
-
     if head_after == head_before:
-        print(
-            "[commit_and_push] claude did not create a new commit; "
-            "falling back to a plain commit",
-            file=sys.stderr,
-        )
-        # Staged changes are still there. Commit + push from Python with a
-        # generic message so the run's work isn't lost.
-        run("git", "commit", "-m", _fallback_commit_message(label))
-        run("git", "push")
-        return 0
-
-    if head_after != upstream:
-        print(
-            f"[commit_and_push] claude committed {head_after[:8]} but did not "
-            f"push (upstream={upstream[:8]}); pushing from python",
-            file=sys.stderr,
-        )
-        push = run("git", "push", check=False)
-        if push.returncode != 0:
-            return push.returncode
-
-    print(f"[commit_and_push] ok: {head_before[:8]} -> {head_after[:8]}")
-    return 0
+        return False
+    print(f"[commit_and_push] claude committed: {head_before[:8]} -> {head_after[:8]}")
+    return True
 
 
 def _fallback_commit_message(label: str) -> str:
-    return f"{label}: {date.today().isoformat()}"
+    """Plain commit message used only when the Claude commit step balks.
 
-
-def commit_message(label: str) -> str:
-    """Ask Claude to write a commit message describing the currently-staged diff.
-
-    Falls back to `<label>: <date>` if anything goes wrong (Claude unavailable,
-    timeout, non-zero exit, malformed output). The fallback is intentionally
-    silent so a transient Claude error never blocks a commit.
+    Includes `git diff --cached --shortstat` for a bit of signal —
+    "ingest: 2026-05-12 — 27 files, +790/-73" is at least navigable in
+    `git log` versus a bare date.
     """
+    today = date.today().isoformat()
     try:
-        stat = subprocess.run(
-            ["git", "diff", "--cached", "--stat"],
+        shortstat = subprocess.run(
+            ["git", "diff", "--cached", "--shortstat"],
             cwd=REPO_ROOT, capture_output=True, text=True, check=True,
         ).stdout.strip()
-        full = subprocess.run(
-            ["git", "diff", "--cached"],
-            cwd=REPO_ROOT, capture_output=True, text=True, check=True,
-        ).stdout
+        # shortstat looks like " 27 files changed, 790 insertions(+), 73 deletions(-)"
+        # condense it: "27 files, +790/-73"
+        if shortstat:
+            import re
+            m = re.search(
+                r"(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?",
+                shortstat,
+            )
+            if m:
+                files = m.group(1)
+                ins = m.group(2) or "0"
+                dele = m.group(3) or "0"
+                return f"{label}: {today} — {files} files, +{ins}/-{dele}"
     except subprocess.CalledProcessError:
-        return _fallback_commit_message(label)
+        pass
+    return f"{label}: {today}"
 
-    excerpt = full[:DIFF_PROMPT_CHAR_LIMIT]
-    if len(full) > DIFF_PROMPT_CHAR_LIMIT:
-        excerpt += f"\n\n... [truncated; full diff is {len(full):,} chars]"
 
-    prompt = (
-        f"You just finished a slackwiki `{label}` run on {date.today().isoformat()}.\n"
-        f"Below is `git diff --cached` for the changes you are about to commit.\n"
-        f"Write the commit message that should accompany them.\n\n"
-        "Format strictly:\n"
-        f"- Line 1: `{label}: {date.today().isoformat()} — <specific imperative summary>`, "
-        "no more than 72 chars total. The summary mentions concrete counts or "
-        "notable named entities (e.g. `+4 channels, +22 people, +2 incidents`, "
-        "`resolve 3 todos, add Forter vendor page`).\n"
-        "- Line 2: blank.\n"
-        "- Following lines: 1–3 short paragraphs of body. Cover: how many "
-        "entities of each kind were created or updated, which notable named "
-        "entities appeared, which todos were resolved, which unverified markers "
-        "were added or cleared, anything unusual. Be concrete and specific to "
-        "this diff; do not write generic boilerplate.\n"
-        "- Do NOT include `INGEST OK` / `LINT OK` or any meta-commentary. "
-        "Do NOT reference yourself, the LLM, or this prompt. "
-        "Output ONLY the commit message itself, nothing before or after.\n\n"
-        "## Diff stat\n"
-        f"```\n{stat}\n```\n\n"
-        "## Diff (may be truncated)\n"
-        f"```diff\n{excerpt}\n```\n"
+def _read_head_commit_message() -> str:
+    """Read the commit message of HEAD."""
+    r = subprocess.run(
+        ["git", "log", "-1", "--format=%B"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
     )
-
-    try:
-        result = subprocess.run(
-            ["claude", "--model", MODEL, "--print", prompt],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=CLAUDE_COMMIT_MSG_TIMEOUT_SEC,
-        )
-    except subprocess.TimeoutExpired:
-        print(
-            "[commit_and_push] claude commit-message timed out, using fallback",
-            file=sys.stderr,
-        )
-        return _fallback_commit_message(label)
-
-    if result.returncode != 0:
-        print(
-            f"[commit_and_push] claude returned {result.returncode}, using fallback",
-            file=sys.stderr,
-        )
-        return _fallback_commit_message(label)
-
-    msg = result.stdout.strip()
-    lines = msg.splitlines()
-    if not lines or len(lines[0]) > 100:
-        print(
-            "[commit_and_push] claude commit message looks malformed, using fallback",
-            file=sys.stderr,
-        )
-        return _fallback_commit_message(label)
-    print(f"[commit_and_push] claude wrote commit message ({len(msg)} chars)")
-    return msg
+    return r.stdout.strip()
 
 
 def main() -> int:
@@ -407,17 +330,22 @@ def main() -> int:
         ts = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
         branch = f"slackwiki/{args.label}-{ts}"
         run("git", "checkout", "-b", branch)
-        # Generate the message ONCE (the Claude call is non-deterministic + costs tokens);
-        # use the first line as the PR title and the rest as the PR body.
-        # Strip any wrapping markdown ``` fences Claude might have added.
-        msg = _strip_code_fences(commit_message(args.label))
+
+        # Same split as commit mode: Claude runs git commit (with a real
+        # message); Python runs git push and gh pr create. If Claude doesn't
+        # commit, fall back to the diff-stat-enriched fallback message.
+        if not commit_via_claude(args.label):
+            run("git", "commit", "-m", _fallback_commit_message(args.label))
+
+        # Read the message back from git so PR title + body match the commit.
+        msg = _read_head_commit_message()
         lines = msg.splitlines()
-        pr_title = lines[0]
+        pr_title = lines[0] if lines else f"{args.label}: {date.today().isoformat()}"
         pr_body = "\n".join(lines[2:]).strip() if len(lines) > 2 else (
             f"Automated `{args.label}` run from theplant/slackwiki. "
             "Review the changes and merge if they look right."
         )
-        run("git", "commit", "-m", msg)
+
         run("git", "push", "-u", "origin", branch)
         run(
             "gh", "pr", "create",
@@ -452,9 +380,40 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-    # Hand the commit + push to Claude (writes message, runs git commit, runs
-    # git push). Python verifies HEAD moved and upstream is in sync afterwards.
-    return commit_and_push_via_claude(args.label)
+    # Claude writes the commit message and runs git commit (allowed by
+    # claude-settings.json's Bash(git commit:*) rule). git push is NOT
+    # allowed for Claude — Python handles push so it can react to push
+    # failures and so push is always mechanical (no LLM judgment needed).
+    if not commit_via_claude(args.label):
+        print(
+            "[commit_and_push] claude did not commit; falling back to a plain commit",
+            file=sys.stderr,
+        )
+        run("git", "commit", "-m", _fallback_commit_message(args.label))
+
+    # Python pushes. If the push fails (e.g. concurrent writer landed
+    # between our pull and our push despite the concurrency group),
+    # surface a non-zero exit so the workflow run is marked failed.
+    push = run("git", "push", check=False)
+    if push.returncode != 0:
+        print(
+            "[commit_and_push] git push failed; commit is local only, next "
+            "run will pick up the cursor + try again",
+            file=sys.stderr,
+        )
+        return push.returncode
+
+    head_after = _git_head()
+    upstream = _git_upstream()
+    if head_after != upstream:
+        print(
+            f"[commit_and_push] post-push HEAD ({head_after[:8]}) != upstream "
+            f"({upstream[:8]}); something odd happened",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"[commit_and_push] ok: HEAD @ {head_after[:8]}")
+    return 0
 
 
 if __name__ == "__main__":
