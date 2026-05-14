@@ -1,0 +1,7 @@
+# Page lifecycle: active vs dormant, never deleted
+
+Wiki pages whose entity has a temporal trail carry a `last_seen: YYYY-MM-DD` frontmatter field. Ingest updates it whenever a new dated section is appended. Lint flips `status: active` to `status: dormant` when `last_seen` is older than a per-type window, and moves the entry from its category section in `index.md` to a single trailing `## Dormant` section. Pages are never deleted; a fresh ingest mention restores `status: active` and moves the entry back. Decisions, incidents, releases, source digests, and lint reports are exempt — they are historical by nature.
+
+Two alternatives were rejected. *Hard archive* (moving dormant pages to `wiki/archive/`) would break existing wikilinks and dangle citations from old decision pages. *No automation* (let readers eyeball dates) would leave `index.md` indistinguishable between active and former entities — at scale this hurts ingest quality because the LLM treats dormant pages as live context and wastes tokens on them.
+
+Consequence: the wiki has a clean two-layer model. The history substrate (dated sections, decisions, incidents) is immutable. The view layer (`index.md`, frontmatter status, the per-person rollups) is recomputed every lint pass and reflects current reality. The dormancy windows are tuned per type: people 90 days, channels 180, projects 180, topics 180, teams 180, services 365, vendors 365, tickets 60, campaigns 60. These can be tuned in the schema without code changes.

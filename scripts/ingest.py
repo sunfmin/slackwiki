@@ -40,25 +40,42 @@ Then follow the "Ingest workflow" in CLAUDE.md exactly:
    (build / deploy), **acronyms** (track counts, do NOT add to glossary — lint does
    that), **infrastructure changes**, **Q&A pairs from threads**, plus open questions
    and external links.
-2. Create or append to pages under wiki/people, wiki/channels, wiki/projects,
-   wiki/topics, wiki/decisions, **wiki/incidents, wiki/services, wiki/vendors,
-   wiki/tickets, wiki/campaigns**. Apply the thresholds from the page-types
-   table — below-threshold entities are not paged this run. Append-only: never
-   overwrite existing dated sections.
-   - Append a line to **wiki/releases/YYYY-MM.md** for every release event (build
-     #s, deploys). Create the month file if missing.
+2. For each recurring entity (people, channels, projects, topics, services,
+   vendors, tickets, campaigns, teams) touched by this batch: see CLAUDE.md
+   "Recurring-entity layout" and ingest workflow step 3+4. In short:
+   - Append a dated section to the entity's monthly log file at
+     `wiki/logs/<type>/<slug>/<current-month>.md` (create folder + month file
+     with proper frontmatter if missing).
+   - On the entity's portrait `wiki/<type>/<slug>.md`: update `last_seen`,
+     flip `dormant → active` if returning, ensure the current month's log is
+     in the "Recent activity log" list. Fill any missing monthly summaries
+     from existing log files (one paragraph per month, frozen on insertion).
+     If you wrote a new monthly summary, refresh `## Role and areas` and
+     `## Collaborators` from the recent monthly summaries. If the portrait is
+     still legacy single-file, migrate it in-place (cap 5 migrations per run).
+   - Apply thresholds from the page-types table — below-threshold entities are
+     not paged this run.
+
+   For non-recurring pages (decisions, incidents, releases, single-file pages):
+   create or append directly as before:
+   - Append a line to **wiki/releases/YYYY-MM.md** for every release event
+     (build #s, deploys). Create the month file if missing.
    - Append to **wiki/infrastructure.md** for infra changes.
    - Append to **wiki/faq.md** for clear Q&A pairs from threads.
 3. **Auto-link ticket IDs**: in every page you write or update, wrap bare
    `[A-Z]{2,}-[0-9]+` matches as `[[tickets/<ID>]]`. Broken wiki-links are fine;
    the next lint will stub tickets that pass the threshold.
-4. Write `wiki/sources/YYYY-MM-DD-slack.md` digesting this ingest batch
-   (channels touched, message counts, key events, new entities created across
-   all categories, plus what got resolved in step 0).
+4. Write per-source-day digests. For each distinct *source day* covered by the
+   raw files in this batch, write or append to `wiki/sources/<source-day>-slack.md`
+   (one digest per source day, not one per batch). Each digest covers only that
+   day's content: channels touched, message counts, key events, new entities
+   created on that day, plus what got resolved in step 0 by messages from that
+   day. HHMM anchors are unique inside a single-day digest. Legacy `-slack-b`,
+   `-slack-c` suffixed files are frozen — never modify them.
 5. Update `wiki/index.md` with links to any newly created pages, under the
    correct category (add new sections for any category that didn't exist yet).
 6. Append one line to `wiki/log.md`:
-   `## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects, +Z decisions, +A incidents, +B services, +C vendors, +D tickets, -K resolved`
+   `## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects, +Z decisions, +A incidents, +B services, +C vendors, +D tickets, +S summaries, +M migrated, -K resolved`
 7. Never modify anything under `raw/`.
 
 All wiki content must be in English (paraphrase non-English source messages

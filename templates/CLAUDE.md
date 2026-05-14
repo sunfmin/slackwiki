@@ -86,26 +86,40 @@ This section instantiates the LLM Wiki pattern for a specific domain: an interna
 
 ### Language policy (strict)
 
-- **All wiki content is written in English.** This includes summaries, entity pages, decisions, index, log, frontmatter values, and commit messages — everything you produce.
-- Source messages may be in any language. When ingesting non-English messages, paraphrase them into English in the wiki body, but preserve the original text in a `> quote` block underneath the paraphrase so meaning is not lost.
-- File and directory names: lowercase ASCII, kebab-case.
+Two policies.
+
+**Policy 1 — Prose language is English.** Summaries, entity pages, decisions, index, log, frontmatter values, commit messages, lint reports — every line of narrative you write is English. Source messages may be in any language. When ingesting non-English messages, paraphrase them into English in the body and preserve the original text in a `> quote` block underneath the paraphrase.
+
+**Policy 2 — Proper nouns: use the established English form, transliterate when in doubt.** Internal names (theplant people, projects, services, vendors theplant integrates with, established team-wide English terms) are used verbatim in their established form — `Kakuyasu` not `カクヤス`, `JMA` not `JMA Android`, `Veritrans` not `ベリトランス`. The rule is: whatever the team uses in English-language Slack messages. Place / product names in a non-Latin script are paraphrased into English in the body and preserved in a `> quote` block once per page on first mention — same shape as Policy 1.
+
+**File and directory names**: lowercase ASCII, kebab-case under both policies.
 
 ### Page types and naming
 
+**Threshold vocabulary** (used in the table below):
+
+- **Distinct mention** — one Slack thread (parent + replies as a unit) in the current ingest batch that contains the entity. Five posts by one author in one thread = 1 distinct mention. Two separate threads on the same day = 2.
+- **Distinct dated mention** — a distinct mention that also lands on its own calendar day. Three threads in one morning = 1 distinct dated mention.
+- **Wiki page mention** (lint only) — one existing wiki page that contains a wikilink to the entity.
+
+Threshold evaluation has two paths. **Ingest** counts distinct mentions inside `state/new_files.txt` and creates pages when the threshold is met in this batch. **Lint** counts wiki page mentions across the whole wiki and back-fills stubs when the threshold is met by the existing wiki. There is no persistent across-batch counter — quiet entities only surface through cross-references over time, which is intentional.
+
+**Recurring entities have a portrait + log layout (see ADR 0005).** Rows below marked **(R)** are recurring entities. Each one is two artifacts: a lint-owned **portrait** at the listed path, plus monthly **log files** at `wiki/logs/<type>/<slug>/<YYYY-MM>.md` written by ingest. The canonical wikilink `[[<type>/<slug>]]` always resolves to the portrait. Empty months have no log file (absence is signal). Non-recurring rows (decisions, incidents, releases, source digests, lint reports, single-file pages) are single-file as before.
+
 | Path | One page per | Threshold | Example |
 |------|-------------|-----------|---------|
-| `wiki/people/<slack-handle>.md` | Person seen in Slack | 1 mention (any author or @mention) | `wiki/people/example.md` |
-| `wiki/channels/<channel-name>.md` | Channel | always (auto-discovered) | `wiki/channels/general.md` |
-| `wiki/projects/<kebab-case>.md` | Project | ≥ 3 distinct mentions | `wiki/projects/payments-v2.md` |
-| `wiki/topics/<kebab-case>.md` | Recurring concept / theme | ≥ 5 distinct mentions | `wiki/topics/incident-response.md` |
+| `wiki/people/<slack-handle>.md` | **(R)** Person seen in Slack | 1 mention (any author or @mention) | `wiki/people/example.md` |
+| `wiki/channels/<channel-name>.md` | **(R)** Channel | always (auto-discovered) | `wiki/channels/general.md` |
+| `wiki/projects/<kebab-case>.md` | **(R)** Project | ≥ 3 distinct mentions | `wiki/projects/payments-v2.md` |
+| `wiki/topics/<kebab-case>.md` | **(R)** Recurring concept / theme | ≥ 5 distinct mentions | `wiki/topics/incident-response.md` |
 | `wiki/decisions/YYYY-MM-DD-<slug>.md` | Decision made in Slack | 1 formal decision | `wiki/decisions/2026-05-11-drop-mongo.md` |
 | `wiki/incidents/YYYY-MM-DD-<slug>.md` | Operational incident with impact (outage, spike, failure, rollback, P0/P1) | impact language present | `wiki/incidents/2026-03-15-db-pressure-spike.md` |
-| `wiki/services/<name>.md` | Internal service or repo | ≥ 3 distinct mentions | `wiki/services/mcd-services.md` |
-| `wiki/vendors/<name>.md` | External vendor / SaaS dependency | ≥ 2 distinct mentions | `wiki/vendors/forter.md` |
-| `wiki/tickets/<TICKET-ID>.md` | Epic-level ticket (only for tickets that recur, not every ID) | ≥ 3 distinct dated mentions | `wiki/tickets/MWMOP-4749.md` |
+| `wiki/services/<name>.md` | **(R)** Internal service or repo | ≥ 3 distinct mentions | `wiki/services/mcd-services.md` |
+| `wiki/vendors/<name>.md` | **(R)** External vendor / SaaS dependency | ≥ 2 distinct mentions | `wiki/vendors/forter.md` |
+| `wiki/tickets/<TICKET-ID>.md` | **(R)** Epic-level ticket (only for tickets that recur, not every ID) | ≥ 3 distinct dated mentions | `wiki/tickets/MWMOP-4749.md` |
 | `wiki/releases/YYYY-MM.md` | Calendar month of release / build activity | always when any build / deploy event exists | `wiki/releases/2026-05.md` |
-| `wiki/campaigns/<kebab-case>.md` | Marketing / product campaign with dates | ≥ 3 distinct mentions | `wiki/campaigns/chiikawa.md` |
-| `wiki/teams/<team>.md` | Sub-team derived from channel + project co-membership | ≥ 3 people in same channel + project | `wiki/teams/kakuyasu-cn.md` |
+| `wiki/campaigns/<kebab-case>.md` | **(R)** Marketing / product campaign with dates | ≥ 3 distinct mentions | `wiki/campaigns/chiikawa.md` |
+| `wiki/teams/<team>.md` | **(R)** Sub-team derived from channel + project co-membership | ≥ 3 people in same channel + project | `wiki/teams/kakuyasu-cn.md` |
 | `wiki/sources/YYYY-MM-DD-slack.md` | Ingest batch digest | 1 per ingest | `wiki/sources/2026-05-11-slack.md` |
 | `wiki/lint/YYYY-MM-DD.md` | Lint report | 1 per lint | `wiki/lint/2026-05-11.md` |
 | `wiki/glossary.md` | (single) Acronym / term dictionary | always | `wiki/glossary.md` |
@@ -115,7 +129,9 @@ This section instantiates the LLM Wiki pattern for a specific domain: an interna
 
 ### Frontmatter
 
-Every wiki page starts with YAML frontmatter. Minimum fields per type:
+Every wiki page starts with YAML frontmatter. Minimum fields per type.
+
+Pages whose entity has a temporal trail (people, channels, projects, topics, services, vendors, tickets, campaigns, teams) carry both `first_seen` and `last_seen`. Ingest updates `last_seen` whenever it appends a dated section. Lint flips `status: active` → `status: dormant` when `last_seen` is older than the page-type's window (see "Lifecycle and dormancy" below). Decisions, incidents, releases, source digests, lint reports, and single-file pages are exempt — they are historical or always-current by nature, and have no `last_seen` field.
 
 ```yaml
 # people
@@ -124,7 +140,9 @@ type: person
 slack_handle: "@example"
 aliases: []
 channels: []
+status: active              # active | dormant
 first_seen: 2026-05-11
+last_seen: 2026-05-11
 ---
 
 # channels
@@ -132,7 +150,9 @@ first_seen: 2026-05-11
 type: channel
 slack_name: general
 purpose: "..."
+status: active              # active | dormant
 first_seen: 2026-05-11
+last_seen: 2026-05-11
 ---
 
 # projects / topics
@@ -140,6 +160,7 @@ first_seen: 2026-05-11
 type: project   # or "topic"
 status: active  # active | dormant | done
 first_seen: 2026-05-11
+last_seen: 2026-05-11
 related: []
 ---
 
@@ -175,10 +196,11 @@ related_decisions: []
 type: service
 repo: ""                    # e.g. "theplant/mcd-services"
 language: ""                # e.g. "go", "kotlin", "swift", "typescript"
-status: active              # active | deprecated | archived
+status: active              # active | dormant | deprecated | archived
 primary_owners: []
 related_projects: []
 first_seen: 2026-05-11
+last_seen: 2026-05-11
 ---
 
 # vendors
@@ -186,10 +208,11 @@ first_seen: 2026-05-11
 type: vendor
 category: ""                # payment | identity | fraud | analytics | cms | infra | ai | …
 integration_owner: ""
-status: active              # active | evaluating | deprecated
+status: active              # active | dormant | evaluating | deprecated
 related_decisions: []
 related_services: []
 first_seen: 2026-05-11
+last_seen: 2026-05-11
 ---
 
 # tickets
@@ -197,11 +220,12 @@ first_seen: 2026-05-11
 type: ticket
 ticket_id: ""               # canonical ID, e.g. "MWMOP-4749"
 title: ""
-status: open                # open | in-progress | resolved | superseded
+status: open                # open | in-progress | resolved | superseded | dormant
 owner: ""
 project: ""                 # related project slug
 related_decisions: []
 first_seen: 2026-05-11
+last_seen: 2026-05-11
 ---
 
 # releases
@@ -214,11 +238,12 @@ projects_touched: []
 # campaigns
 ---
 type: campaign
-status: upcoming            # upcoming | active | completed
+status: upcoming            # upcoming | active | completed | dormant
 key_dates: []               # ISO dates
 related_projects: []
 related_decisions: []
 first_seen: 2026-05-11
+last_seen: 2026-05-11
 ---
 
 # teams
@@ -228,6 +253,9 @@ focus: ""                   # one-line description of scope
 members: []                 # slack handles
 primary_channels: []
 primary_projects: []
+status: active              # active | dormant
+first_seen: 2026-05-11
+last_seen: 2026-05-11
 ---
 
 # single-file pages
@@ -235,7 +263,111 @@ primary_projects: []
 type: glossary              # or "infrastructure", "faq", "todos"
 updated: 2026-05-11
 ---
+
+# log file (one per entity per active month, written by ingest)
+---
+type: log
+entity: dorothy             # slug of the portrait
+entity_type: person         # people | channels | projects | topics | services | vendors | tickets | campaigns | teams
+month: 2026-05
+---
 ```
+
+### Recurring-entity layout: portrait + monthly logs
+
+For every recurring entity (rows marked **(R)** in the page-types table), the wiki stores two artifacts.
+
+**Ingest owns nearly all portrait writes.** Rationale: daily ingest cadence means anything lint-owned would lag by up to a week. On each run that touches an entity, ingest performs maintenance (`last_seen`, `dormant → active` flips, recent-activity list), fills any missing monthly summaries it can from existing log files, refreshes the identity zone whenever a new summary lands, and (one-shot per entity) performs organic migration from legacy single-file pages.
+
+**Lint writes exactly two narrow things on portraits:** the `## Open action items (from [[todos]])` section (replaced in full each lint pass from `todos.md`) and the `status: dormant` frontmatter flag (the `active → dormant` direction only — ingest owns the other direction). Lint also moves the portrait's entry in `index.md` between its category section and the `## Dormant` section to mirror `status`.
+
+**Portrait** at `wiki/<type>/<slug>.md`. Structure:
+
+```markdown
+---
+type: person                # or channel, project, topic, service, vendor, ticket, campaign, team
+status: active              # active | dormant
+first_seen: 2026-05-11
+last_seen: 2026-07-22       # computed by lint from the latest log entry
+…type-specific fields…
+---
+
+# Dorothy
+
+Backend developer at theplant. One-sentence identity statement.
+
+## Role and areas
+[Rolling synthesis from the last 3–6 monthly summaries. Rewritten by lint
+ whenever a new monthly summary is added; left alone on mid-month lints.]
+
+## Collaborators
+[Top N people, inferred from co-mention frequency in the recent monthly
+ summaries. Same refresh cadence as Role and areas.]
+
+## Open action items (from [[todos]])
+[Replaced every lint pass — already in the schema.]
+
+## Monthly chronicle
+
+### 2026-07
+[One paragraph synthesising July's log file. Written once on the first
+ lint of August. Frozen — never rewritten.]
+
+### 2026-06
+[Frozen June summary.]
+
+### 2026-05
+[Frozen May summary.]
+
+## Recent activity log
+
+- [[logs/people/dorothy/2026-07]]
+- [[logs/people/dorothy/2026-06]]
+- [[logs/people/dorothy/2026-05]]
+```
+
+**Activity log files** at `wiki/logs/<type>/<slug>/<YYYY-MM>.md` — ingest-owned, append-only, one file per calendar month. Structure:
+
+```markdown
+---
+type: log
+entity: dorothy
+entity_type: person
+month: 2026-07
+---
+
+# Dorothy — 2026-07
+
+## 2026-07-03
+
+[Dated section content as before, with [source](../../../sources/2026-07-03-slack.md#msg-1432) citations.]
+
+## 2026-07-05
+
+…
+```
+
+Empty months are simply absent — no file is created for a month where the entity had no activity. The portrait's "Recent activity log" list is regenerated by lint each pass and points only at log files that actually exist.
+
+### Lifecycle and dormancy
+
+Portraits whose entity has a temporal trail carry `last_seen` in frontmatter. Ingest updates `last_seen` to today on every run that appends to the entity's log file, flips `status: active` on a returning entity, and flips `status: dormant` when (while doing maintenance) it observes that the windowed `today - last_seen` has elapsed without activity. Both directions of the status flip live in ingest. Lint reads each portrait's `status` and, if it differs from where the entry lives in `index.md`, moves the entry — active entries belong in their category section, dormant entries belong under the single trailing `## Dormant` section. Lint never modifies the portrait body or its `status` frontmatter.
+
+Per-type windows:
+
+| Type | Window | Notes |
+|------|--------|-------|
+| people | 90 days | covers vacations and quiet sprints |
+| channels | 180 days | low-traffic channels stay active |
+| projects | 180 days | mid-engagement quiet periods |
+| topics | 180 days | recurring patterns can lull |
+| teams | 180 days | tied to project lifecycle |
+| services | 365 days | infra rarely sees daily chatter |
+| vendors | 365 days | same as services |
+| tickets | 60 days | short — closed tickets shouldn't squat |
+| campaigns | 60 days | most campaigns are time-bounded |
+
+Decisions, incidents, releases, source digests, and lint reports have no `last_seen` field and never go dormant — they are historical by nature. Single-file pages (`glossary.md`, `infrastructure.md`, `faq.md`, `todos.md`) are always-current views and never go dormant.
 
 ### Ingest workflow
 
@@ -256,18 +388,48 @@ Trigger: the Action sets `state/new_files.txt` to the list of raw files written 
 
 1. **Read only the files listed in `state/new_files.txt`.** Do not scan the rest of the repo. This caps token cost.
 2. **Extract entities** from each file. See "Entity detection rules" below for the full list and how to recognise each. In short: people, projects, decisions, **incidents** (impact language), **services** (repo names), **vendors** (external SaaS), **tickets** (ID patterns), **campaigns** (named time-bounded events), **release events** (build / deploy), **acronyms** (for glossary), **infrastructure changes** (RDS / K8s / cron), **Q&A pairs** (from threads), plus open questions and external links.
-3. **Update entity pages.** For each entity:
-   - If `wiki/<type>/<slug>.md` does not exist and the threshold in the page-types table is met, create it with proper frontmatter and a `## YYYY-MM-DD` section. Below-threshold entities are remembered (counts roll forward in your synthesis) but no page is created yet — lint will back-fill once a threshold is crossed.
-   - If it exists, **append, do not overwrite**: add a new `## YYYY-MM-DD` section with today's findings. Old content stays intact.
-   - Single-file pages (`glossary.md`, `infrastructure.md`, `faq.md`) get **appended to**, not section-replaced, when new entries arrive.
-4. **Write `wiki/sources/YYYY-MM-DD-slack.md`** — a digest page for this batch listing: channels touched, message counts, key events, new entities created, decisions recorded, and which `⚠️ Unverified` markers / todos got resolved in step 0.
-5. **Update `wiki/index.md`** — add links to any newly created pages, under the correct category.
-6. **Append one line to `wiki/log.md`** in this exact format:
+3. **Update recurring-entity log files.** For each recurring entity (rows marked **(R)** in the page-types table) touched by this batch:
+   - **Threshold check.** If the entity has no portrait yet and the threshold in the page-types table is NOT met inside this batch, skip the entity entirely — lint will back-fill via wiki-page-mention later. Otherwise proceed.
+   - **Log append.** Append a `## YYYY-MM-DD` section to `wiki/logs/<type>/<slug>/<current-month>.md` (create the entity's `wiki/logs/<type>/<slug>/` folder and the month file with proper frontmatter if either is missing). One log file per entity per calendar month.
+
+4. **Update the entity's portrait.** Ingest owns nearly all portrait writes; lint touches only the `## Open action items (from [[todos]])` section and the `status: dormant` flag (see lint workflow). For each entity that received a log append in step 3, do the following on `wiki/<type>/<slug>.md`:
+
+   a. **Migration (one-shot per entity)**. If the page is still a legacy single-file page (carries `## YYYY-MM-DD` dated sections in the body and has no sibling folder at `wiki/logs/<type>/<slug>/`):
+      - Create the log folder; bucket the existing dated sections by calendar month into `wiki/logs/<type>/<slug>/<YYYY-MM>.md` files (each with proper log frontmatter).
+      - Synthesise a one-paragraph monthly summary for each bucketed month; tag each with `_Migration-derived from legacy single-file page._` on the final line.
+      - Rewrite the portrait body: keep the original `# Title` and identity prose, add `## Role and areas` / `## Collaborators` placeholders (filled by step 4d), `## Open action items (from [[todos]])` (filled by lint), `## Monthly chronicle` with the migration-derived summaries newest-first, `## Recent activity log` with the 3 newest log files.
+      - Cap: do **no more than 5 migrations per ingest run**. If today's batch touches more legacy entities than that, finish maintenance/log updates for all of them but defer migration on the overflow to the next run.
+
+   b. **Maintenance writes (always).**
+      - Set `last_seen: <today>` in frontmatter.
+      - If `status` is `dormant`, flip it to `active`.
+      - In `## Recent activity log`, ensure the current month's log link `[[logs/<type>/<slug>/<current-month>]]` is the first item. Keep the list to the 3 most-recent months; drop the oldest if needed.
+
+   c. **Monthly summary fill.** Scan `wiki/logs/<type>/<slug>/` for any month that has a log file but no matching `### <YYYY-MM>` entry under `## Monthly chronicle`. For each missing month (typically just the previous calendar month on the first ingest of a new month):
+      - Read the log file for that month.
+      - Synthesise one paragraph (~80–120 words) capturing key events, decisions, collaborators, themes. Cite specific dated sections back through `[source](../logs/<type>/<slug>/<YYYY-MM>.md#<date>)` for the most important claims.
+      - Insert as `### <YYYY-MM>` at the top of `## Monthly chronicle` (newest first). **Frozen on insertion — never rewrite a `### <YYYY-MM>` you wrote in a previous run.**
+
+   d. **Identity zone refresh — only if step 4c added at least one new summary.** Read the 3–6 most-recent `### <YYYY-MM>` entries from the Monthly chronicle and rewrite `## Role and areas` and `## Collaborators` from them. If no new summary was added on this run, leave the identity zone alone — the input did not change.
+
+   *(The `active → dormant` flip is owned by lint, not ingest — ingest only processes touched entities, so a quietly-dormant entity is never seen by ingest. Lint scans every recurring-entity portrait once a week and is the right place to flip stale ones to dormant. See lint workflow.)*
+
+5. **Non-recurring pages (decisions, incidents, releases, single-file pages)** are written directly as before — these are not split:
+   - **Decisions / incidents**: create the page if missing; append a `## YYYY-MM-DD` section if it already exists.
+   - **Releases**: append a line to `wiki/releases/<current-month>.md` (create the file if missing).
+   - **Single-file pages** (`glossary.md`, `infrastructure.md`, `faq.md`): append; never section-replace.
+
+6. **Write per-source-day digests.** For each distinct *source day* covered by the raw files in this batch, write or append to `wiki/sources/<source-day>-slack.md`. A batch that touches three source days writes (or appends to) three digests — not one batch digest. Each digest lists: channels touched on that source day, message counts, key events from that day, new entities created on that day, decisions recorded on that day, and which `⚠️ Unverified` markers / todos got resolved by content from that day. Anchor each rendered message with `<a id="msg-HHMM"></a>`; HHMM is unique within a single-day digest. If a digest already exists for that source day (from an earlier batch), append a new `## Batch from <ingest-date>` subsection rather than overwriting. Legacy `-slack-b`, `-slack-c` suffixed digests in `wiki/sources/` are frozen artifacts — never modify them.
+
+7. **Update `wiki/index.md`** — add links to any newly created portraits, under the correct category. If you flipped an entity from `dormant` back to `active`, move its entry from `## Dormant` back to its category section.
+
+8. **Append one line to `wiki/log.md`** in this exact format:
    ```
-   ## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects, +Z decisions, -K resolved
+   ## [YYYY-MM-DD] ingest | slack | N channels, M messages, +X people, +Y projects, +Z decisions, +S summaries, +M migrated, -K resolved
    ```
-   where `-K resolved` counts items closed in the pre-pass.
-7. **Never touch `raw/`.** The `.claude/settings.json` denies it, but obey it explicitly.
+   where `+S summaries` counts monthly summaries written this run, `+M migrated` counts legacy entities migrated, and `-K resolved` counts items closed in the pre-pass.
+
+9. **Never touch `raw/`.** The `.claude/settings.json` denies it, but obey it explicitly.
 
 ### Entity detection rules
 
@@ -304,7 +466,9 @@ These are the patterns that flip raw text into wiki entities. Apply them during 
 
 ### Source-page anchor convention
 
-When citing a message, the digest page (`wiki/sources/YYYY-MM-DD-slack.md`) anchors each message with `<a id="msg-HHMM"></a>` derived from the rendered timestamp. Pages cite back as `[source](../sources/YYYY-MM-DD-slack.md#msg-HHMM)`. With multiple digests in a day (e.g. `-slack-b`, `-slack-c`), use the matching anchor target.
+The digest at `wiki/sources/YYYY-MM-DD-slack.md` is single-day by construction (one digest per source day; see ingest step 4). Each rendered message anchors as `<a id="msg-HHMM"></a>` derived from the local-timezone timestamp; HHMM is unique within one day. Pages cite back as `[source](../sources/YYYY-MM-DD-slack.md#msg-HHMM)` where `YYYY-MM-DD` is the **source day of the cited message**, not the ingest date.
+
+Legacy `-slack-b`, `-slack-c` files predating this rule remain valid link targets but new content does not use that suffix scheme.
 
 ### Writing style
 
@@ -321,12 +485,14 @@ When citing a message, the digest page (`wiki/sources/YYYY-MM-DD-slack.md`) anch
 
 ### Lint workflow
 
-When invoked in lint mode (`mode: lint` in the Action), do five things in one pass and produce ONE PR containing everything. Diagnose-only lint is useless: a list of "recommended actions" sitting in a markdown file gets read once and forgotten. Each lint pass must leave the wiki strictly more correct than it found it.
+When invoked in lint mode (`mode: lint` in the Action), do the steps below in one pass and produce ONE PR containing everything. Diagnose-only lint is useless: a list of "recommended actions" sitting in a markdown file gets read once and forgotten. Each lint pass must leave the wiki strictly more correct than it found it.
+
+Note on portraits: lint writes exactly two things on portraits — the `## Open action items (from [[todos]])` section (step 7 below) and the `status: dormant` frontmatter flag (step 3, `active → dormant` direction only). Everything else on portraits is ingest-owned per ADR 0005. Migration of legacy single-file portraits is ingest-owned.
 
 1. **Apply mechanical fixes** to existing wiki pages — these are zero-judgment, low-risk edits:
    - **Wikilink case**: `[[Kate]]` → `[[kate]]` whenever the target file is lowercase kebab-case.
    - **Symmetric `related:` frontmatter**: if A.related lists B but B.related does not list A, add it.
-   - **Quote-block wrapping**: bare non-English inline terms get moved into a `> quote` block right after the English paraphrase, per the language policy.
+   - **Quote-block wrapping**: bare non-English inline terms get moved into a `> quote` block right after the English paraphrase, per Language Policy 1/2.
    - **Decision back-links**: every decision page gets a `See also:` line linking back to participant people pages and the related project page; sibling project pages get a "Key decisions" sub-section linking to relevant decisions.
 
 2. **Create stub pages** for missing-but-warranted entities. Apply each threshold from the page-types table:
@@ -339,52 +505,74 @@ When invoked in lint mode (`mode: lint` in the Action), do five things in one pa
    - **Campaigns**: ≥ 3 distinct mentions of a named campaign
    - **Teams**: when ≥ 3 people consistently co-appear in the same channel + project (derive team membership)
 
-   Stub format (synthesize content from existing wiki references — never leave a stub empty):
+   Stub format (portrait shape, no log files yet — those will appear when ingest first touches the entity):
    ```
    ---
    type: <topic | person | service | vendor | ticket | incident | campaign | team>
    created_by: lint
+   status: active
    first_seen: YYYY-MM-DD
+   last_seen: YYYY-MM-DD
    ---
 
    # <Title>
 
    <One paragraph synthesising what is known from existing wiki references.>
 
+   ## Role and areas
+
+   <Synthesised from referencing wiki pages.>
+
    ## Mentions
 
    - [[page1]] — what was said
    - [[page2]] — what was said
 
-   _Stub created by lint based on existing wiki references. Future ingests will expand this page as new Slack messages provide more detail._
+   ## Monthly chronicle
+
+   _No log activity yet. Monthly summaries will appear here once ingest starts writing log files for this entity._
+
+   ## Recent activity log
+
+   _None yet._
+
+   _Stub created by lint based on existing wiki references. Future ingests will expand this portrait as new Slack messages provide more detail._
    ```
 
-3. **Inject `⚠️ Unverified as of YYYY-MM-DD` markers** above each stale claim (claims dated more than 5 days ago whose follow-up state is not recorded). Format:
+   `first_seen` = today, `last_seen` = the most recent dated reference found in the existing wiki (or today if none), `status: active`. Ingest takes over as the portrait's sole writer from the first time it touches the entity after stub creation.
+
+3. **Apply the dormancy rule (`active → dormant` only).** Scan every recurring-entity portrait. For each one with `status: active` whose `today - last_seen` exceeds the page-type window listed in "Lifecycle and dormancy":
+   - Set `status: dormant` in the portrait's frontmatter. This is the only portrait field lint is allowed to write.
+   - In `wiki/index.md`, remove the entry from its category section and append it under the single trailing `## Dormant` section, formatted as `- [[<path>]] — <one-line summary> (dormant since YYYY-MM-DD)`.
+
+   The reverse direction (`dormant → active`) is owned by ingest — when a returning entity is touched, ingest flips the status and moves the index entry back. Lint never writes `status: active`.
+
+4. **Inject `⚠️ Unverified as of YYYY-MM-DD` markers** above each stale claim (claims dated more than 5 days ago whose follow-up state is not recorded). Format:
    ```
    > ⚠️ Unverified as of YYYY-MM-DD. <one-line description of what needs confirmation>.
    ```
    These get auto-resolved by the next ingest pass when new Slack messages confirm them (see Ingest workflow step 0).
 
-4. **Update `wiki/todos.md`** with anything that requires authorial judgment and isn't covered by 1–3 (e.g. scoping decisions, naming conventions, structural questions about the wiki itself). Append to `## Open` in the format:
+5. **Update `wiki/todos.md`** with anything that requires authorial judgment and isn't covered by 1–4 (e.g. scoping decisions, naming conventions, structural questions about the wiki itself). Append to `## Open` in the format:
    ```
    - [ ] YYYY-MM-DD — **<action>**. <context with [[wiki-links]]>
    ```
    Do not modify existing `## Resolved` items. Create `wiki/todos.md` if it doesn't exist (see seed format in `templates/wiki-seed/todos.md`).
 
-5. **Update the glossary.** Scan all wiki pages for uppercase tokens `[A-Z]{3,}`. For each token appearing in ≥ 5 distinct pages and not yet in `wiki/glossary.md`, add an alphabetical entry with a one-line synthesised definition + `[[wiki-link]]` to the canonical page (if one exists). Don't add tokens that are file extensions, common English words in caps, or noise (e.g. URL, API, HTTP unless they're project-specific).
+6. **Update the glossary.** Scan all wiki pages for uppercase tokens `[A-Z]{3,}`. For each token appearing in ≥ 5 distinct pages and not yet in `wiki/glossary.md`, add an alphabetical entry with a one-line synthesised definition + `[[wiki-link]]` to the canonical page (if one exists). Don't add tokens that are file extensions, common English words in caps, or noise (e.g. URL, API, HTTP unless they're project-specific).
 
-6. **Roll up open action items into people pages.** For each `## Open` item in `wiki/todos.md` that contains `[[people/X]]`, mirror that line into `wiki/people/X.md` under a section named `## Open action items (from [[todos]])`. Replace the entire section on every lint run — do not append. If a person has no open items, remove the section entirely. This makes "what is X currently on the hook for?" a one-page answer.
+7. **Roll up open action items into people pages.** For each `## Open` item in `wiki/todos.md` that contains `[[people/X]]`, mirror that line into `wiki/people/X.md` under a section named `## Open action items (from [[todos]])`. Replace the entire section on every lint run — do not append. If a person has no open items, remove the section entirely. This makes "what is X currently on the hook for?" a one-page answer.
 
-7. **Cross-link decisions ↔ incidents.** For each decision page that references an incident page in its body or sees-also, add `triggered_by: <incident-slug>` to the decision's frontmatter (only if not already present). Do not invert the relationship; the incident page links to decisions through its `related_decisions:` list, populated by the ingest.
+8. **Cross-link decisions ↔ incidents.** For each decision page that references an incident page in its body or sees-also, add `triggered_by: <incident-slug>` to the decision's frontmatter (only if not already present). Do not invert the relationship; the incident page links to decisions through its `related_decisions:` list, populated by the ingest.
 
-8. **Write the lint report** at `wiki/lint/YYYY-MM-DD.md` with one section per step above documenting exactly what was fixed / created / injected / queued / glossed / rolled-up / cross-linked. End with a "Residual items" section pointing readers to `wiki/todos.md` for tracked follow-ups.
+9. **Write the lint report** at `wiki/lint/YYYY-MM-DD.md` with one section per step above documenting exactly what was fixed / created / injected / queued / glossed / rolled-up / cross-linked / flipped-dormant. End with a "Residual items" section pointing readers to `wiki/todos.md` for tracked follow-ups.
 
-9. **Update `wiki/index.md`** for any new pages, and append one line to `wiki/log.md`:
-   ```
-   ## [YYYY-MM-DD] lint | N fixes, M stubs, P markers, Q new todos, R gloss, S rollups
-   ```
+10. **Update `wiki/index.md`** for any new pages, and append one line to `wiki/log.md`:
+    ```
+    ## [YYYY-MM-DD] lint | N fixes, M stubs, P markers, Q new todos, R gloss, S rollups, T dormant
+    ```
 
-The resulting commit contains: the report + all mechanical fixes + new stub pages + injected markers + updated `todos.md` + glossary updates + per-person rollups + decision back-links — one reviewable changeset.
+The resulting commit contains: the report + all mechanical fixes + new stub pages + dormant flips + injected markers + updated `todos.md` + glossary updates + per-person rollups + decision back-links — one reviewable changeset.
 
 Bounds: never touch `raw/`. Never delete content from existing pages; mark `status: superseded` instead. Never edit a `## Resolved` todo item.
 

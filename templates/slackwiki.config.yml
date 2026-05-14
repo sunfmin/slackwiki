@@ -15,10 +15,9 @@ channel_excludes:
   - off-topic
 
 wiki:
-  language: en                         # locked to English (see CLAUDE.md)
+  language: en                         # locked to English (see CLAUDE.md Policy 1)
   focus: |
     # Optional domain hint for Claude. Leave empty if not needed.
     # Example:
     #   Internal product engineering team. Emphasize decisions about the
-    #   payments and onboarding products. Treat customer names as PII —
-    #   summarize impact, do not store full names.
+    #   payments and onboarding products.
